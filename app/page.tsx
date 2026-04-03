@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import axios from 'axios'
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BookOpen,
@@ -71,6 +72,9 @@ export default function HomePage() {
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [themeTransition, setThemeTransition] = useState<ThemeTransition>(null);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [extractedSkills, setExtractedSkills] = useState<Skill[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const jobsToShow = useMemo(
     () => mockUserProfile.jobRecommendations.slice(0, expandedJobs ? 5 : 3),
@@ -109,6 +113,31 @@ export default function HomePage() {
       });
     }
   };
+  const handleAnalyzeProfile = async () => {
+    if (!Object.values(links).some((link) => link)) {
+      setAnalysisError('Please provide at least one link.');
+      return;
+    }
+
+    setAnalyzing(true);
+    setAnalysisError(null);
+    setExtractedSkills([]);
+
+    try {
+      const response = await axios.post('/api/analyze-profile', { links });
+      setExtractedSkills(response.data.skills || []);
+    } catch (err) {
+      setAnalysisError('Failed to analyze profile. Please try again.');
+      console.error(err);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+  interface Skill {
+  name: string;
+  confidence: number;
+  source: string;
+}
 
   useEffect(() => {
     let ignore = false;
@@ -236,6 +265,7 @@ export default function HomePage() {
               <Sun className="h-12 w-12 text-amber-50" />
             </motion.div>
           </motion.div>
+          
         )}
       </AnimatePresence>
 
@@ -346,7 +376,7 @@ export default function HomePage() {
         </p>
       </motion.section>
 
-      <motion.section
+        <motion.section
         id="links"
         initial="hidden"
         whileInView="visible"
@@ -362,14 +392,20 @@ export default function HomePage() {
           </h2>
           <button
             type="button"
+<<<<<<< HEAD
+            onClick={handleAnalyzeProfile}
+            disabled={analyzing}
+            className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:bg-gray-400"
+=======
             className="rounded-xl btn-accent px-4 py-2 text-sm font-semibold"
+>>>>>>> d0d4647f3ec72a9d676f1056747904a0c2d7223c
           >
-            Analyze Profile
+            {analyzing ? 'Analyzing...' : 'Analyze Profile'}
           </button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <LinkInput
+           <LinkInput
             label="GitHub"
             value={links.github}
             onChange={(value) => updateLink('github', value)}
@@ -412,6 +448,26 @@ export default function HomePage() {
             icon={<ExternalLink className="h-4 w-4" />}
           />
         </div>
+         {/* Error Display */}
+        {analysisError && <p className="text-red-500 mt-4">{analysisError}</p>}
+
+        {/* Display Extracted Skills */}
+        {extractedSkills.length > 0 && (
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+            <h3 className="text-lg font-semibold mb-3 text-slate-900">AI-Extracted Skills</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {extractedSkills.map((skill, index) => (
+                <div key={index} className="p-3 bg-white border border-gray-200 rounded-lg">
+                  <p className="font-medium text-slate-900">{skill.name}</p>
+                  <p className="text-sm text-slate-600">Confidence: {(skill.confidence * 100).toFixed(0)}%</p>
+                  <p className="text-xs text-slate-500">From: {skill.source}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      
+
       </motion.section>
 
       <motion.section
@@ -617,6 +673,7 @@ export default function HomePage() {
           ))}
         </div>
       </motion.section>
+      
       </main>
     </>
   );
