@@ -33,15 +33,34 @@ Next-Gen Skillforge is an AI-powered career intelligence dashboard built with Ne
 
 ## Architecture Overview
 
-- `app/page.tsx`: Interactive dashboard UI, link input, resume import, analysis trigger, and results panels.
-- `app/api/analyze-profile/route.ts`: URL validation, scraping, skill extraction, AI orchestration, and response shaping.
-- `app/api/resume/import/route.ts`: Resume file parsing and keyword detection.
-- `app/api/report/download/route.ts`: Generates a PDF report from validated profile payload.
-- `app/api/session/preferences/route.ts`: Stores theme, links, and UI preference state.
-- `app/api/session/analysis/route.ts`: Stores/retrieves/clears current analysis in session.
-- `app/api/profile/snapshot/route.ts`: Writes `lib/generatedUserProfile.ts` with JSON fallback.
-- `lib/ai.ts`: Multi-provider AI adapter and normalized profile analysis parsing.
-- `lib/session.ts`: Session secret handling and cookie configuration.
+```text
+TIC-2K26-Next-Gen-Builders/
+├── app/
+│   ├── page.tsx
+│   │   └── Interactive dashboard UI, link input, resume import, analysis trigger, and results panels.
+│   └── api/
+│       ├── analyze-profile/
+│       │   └── route.ts      -> URL validation, scraping, skill extraction, AI orchestration, and response shaping.
+│       ├── resume/
+│       │   └── import/
+│       │       └── route.ts  -> Resume file parsing and keyword detection.
+│       ├── report/
+│       │   └── download/
+│       │       └── route.ts  -> Generates a PDF report from validated profile payload.
+│       ├── session/
+│       │   ├── preferences/
+│       │   │   └── route.ts  -> Stores theme, links, and UI preference state.
+│       │   └── analysis/
+│       │       └── route.ts  -> Stores/retrieves/clears current analysis in session.
+│       └── profile/
+│           └── snapshot/
+│               └── route.ts  -> Writes lib/generatedUserProfile.ts with JSON fallback.
+└── lib/
+	├── ai.ts
+	│   └── Multi-provider AI adapter and normalized profile analysis parsing.
+	└── session.ts
+		└── Session secret handling and cookie configuration.
+```
 
 ## UX Flow
 
