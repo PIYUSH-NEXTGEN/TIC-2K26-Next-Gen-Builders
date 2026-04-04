@@ -7,6 +7,7 @@ import {
   BookOpen,
   Briefcase,
   ExternalLink,
+  FileDown,
   Github,
   Lightbulb,
   Linkedin,
@@ -93,6 +94,8 @@ export default function HomePage() {
   const [resumeText, setResumeText] = useState('');
   const [resumeFileName, setResumeFileName] = useState('');
   const [uploadingResume, setUploadingResume] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState(false);
+  const [hasCompletedAnalysis, setHasCompletedAnalysis] = useState(false);
 
   const [jobs, setJobs] = useState<JobRecommendation[]>(initialProfile.jobRecommendations);
   const [learningPath, setLearningPath] = useState<LearningPathItem[]>(initialProfile.learningPath);
@@ -131,6 +134,24 @@ export default function HomePage() {
     }
   };
 
+  const getCurrentProfile = (): UserProfile => ({
+    links,
+    technicalSkills: aiTechnicalSkills,
+    softSkills: aiSoftSkills,
+    jobRecommendations: jobs,
+    aiSummary: {
+      overview: aiSummary,
+      strengths: aiStrengths,
+      gaps: aiGaps,
+      industryRelevanceScore,
+      atsScore,
+      atsFeedback,
+      industryInsights,
+      topSkills,
+    },
+    learningPath,
+  });
+
   const updateLink = (field: keyof SocialLinks, value: string) => {
     setLinks((prev) => ({ ...prev, [field]: value }));
     void fetch('/api/session/analysis', { method: 'DELETE' });
@@ -147,6 +168,7 @@ export default function HomePage() {
     setAtsFeedback(initialProfile.aiSummary.atsFeedback);
     setIndustryInsights(initialProfile.aiSummary.industryInsights);
     setTopSkills(initialProfile.aiSummary.topSkills);
+    setHasCompletedAnalysis(false);
     setAnalysisMessage('Edit completed links, then click Analyze Profile to refresh recommendations for the new user.');
     if (!isUrlValid(value)) {
       setLinkErrors((prev) => ({ ...prev, [field]: 'Please enter a valid URL (https://...).'}));
@@ -156,6 +178,53 @@ export default function HomePage() {
         delete next[field];
         return next;
       });
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    if (!hasCompletedAnalysis) {
+      setAnalysisError('Run profile analysis first, then download the generated PDF report.');
+      setAnalysisMessage(null);
+      return;
+    }
+
+    setDownloadingReport(true);
+    setAnalysisError(null);
+
+    try {
+      const response = await fetch('/api/report/download', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          profile: getCurrentProfile(),
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || 'Failed to generate report PDF.');
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 10);
+      link.href = downloadUrl;
+      link.download = `profile-analysis-report-${stamp}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+
+      setAnalysisMessage('PDF report downloaded successfully.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to download the report PDF.';
+      setAnalysisError(message);
+      setAnalysisMessage(null);
+    } finally {
+      setDownloadingReport(false);
     }
   };
 
@@ -251,6 +320,7 @@ export default function HomePage() {
       setTopSkills(response.data.aiTopSkills || []);
       setJobs(response.data.aiJobRecommendations || []);
       setLearningPath(response.data.aiLearningPath || []);
+      setHasCompletedAnalysis(true);
 
       const processedProfile: UserProfile = {
         links,
@@ -365,6 +435,7 @@ export default function HomePage() {
               setTopSkills(savedProfile.aiSummary.topSkills);
               setJobs(savedProfile.jobRecommendations);
               setLearningPath(savedProfile.learningPath);
+              setHasCompletedAnalysis(true);
               setAnalysisMessage('Loaded saved analysis for this browser session.');
             }
           }
@@ -596,14 +667,25 @@ export default function HomePage() {
             <UserCircle2 className="h-6 w-6 text-emerald-700" />
             Professional Link Inputs
           </h2>
-          <button
-            type="button"
-            onClick={handleAnalyzeProfile}
-            disabled={analyzing}
-            className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:bg-gray-400"
-          >
-            {analyzing ? 'Analyzing...' : 'Analyze Profile'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadReport}
+              disabled={downloadingReport || !hasCompletedAnalysis}
+              className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <FileDown className="h-4 w-4" />
+              {downloadingReport ? 'Preparing PDF...' : 'Download Report PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={handleAnalyzeProfile}
+              disabled={analyzing}
+              className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:bg-gray-400"
+            >
+              {analyzing ? 'Analyzing...' : 'Analyze Profile'}
+            </button>
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

@@ -72,9 +72,7 @@ Next-Gen Skillforge is an AI-assisted career profile analyzer built with Next.js
 These are strong next steps that can make the product feel more startup-ready and commercially valuable:
 
 - User accounts and persistent profiles so users can track their growth over time.
-- Resume import and ATS scoring to compare a CV against target job descriptions.
 - Recruiter and hiring-manager views for evaluating candidates from a single dashboard.
-- Shareable profile reports with public links, PDF export, and branded summaries.
 - Skill-gap roadmap with weekly milestones, progress tracking, and reminders.
 - Integration with GitHub, LinkedIn, Notion, and Google Drive for deeper profile signals.
 - Personalized job feed with saved roles, alerts, and match history.
