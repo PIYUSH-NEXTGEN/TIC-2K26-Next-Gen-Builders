@@ -181,18 +181,25 @@ async function callAnthropic(prompt: string): Promise<string> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error('ANTHROPIC_API_KEY missing');
 
-  const response = await fetch('https://api.anthropic.com/v1/complete', {
+  const model = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022';
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-3.5-sonic',
-      prompt: `\n\nHuman: ${prompt}\n\nAssistant:`,
-      max_tokens_to_sample: 900,
+      model,
+      max_tokens: 900,
       temperature: 0.05,
-      stop_sequences: ['\n\nHuman:'],
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
     }),
   });
 
@@ -202,7 +209,9 @@ async function callAnthropic(prompt: string): Promise<string> {
   }
 
   const data = await response.json();
-  return data?.completion ?? '';
+  const content = Array.isArray(data?.content) ? data.content : [];
+  const firstTextChunk = content.find((item: any) => item?.type === 'text' && typeof item?.text === 'string');
+  return firstTextChunk?.text ?? '';
 }
 
 async function callHuggingFace(prompt: string): Promise<string> {

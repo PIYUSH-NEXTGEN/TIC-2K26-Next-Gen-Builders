@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios'
+import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BookOpen,
@@ -321,6 +322,7 @@ export default function HomePage() {
       setJobs(response.data.aiJobRecommendations || []);
       setLearningPath(response.data.aiLearningPath || []);
       setHasCompletedAnalysis(true);
+      const linkWarnings = Array.isArray(response.data?.linkWarnings) ? response.data.linkWarnings : [];
 
       const processedProfile: UserProfile = {
         links,
@@ -340,23 +342,37 @@ export default function HomePage() {
         learningPath: response.data.aiLearningPath || [],
       };
 
-      await fetch('/api/session/analysis', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          analysis: {
-            signature: JSON.stringify(links),
-            profile: processedProfile,
+      let saveWarning = '';
+      try {
+        const saveResponse = await fetch('/api/session/analysis', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        }),
-      });
+          body: JSON.stringify({
+            analysis: {
+              signature: JSON.stringify(links),
+              profile: processedProfile,
+            },
+          }),
+        });
+
+        if (!saveResponse.ok) {
+          saveWarning = ' Analysis ran successfully, but the result could not be saved to this browser session.';
+        }
+      } catch {
+        saveWarning = ' Analysis ran successfully, but saving the result to this browser session failed.';
+      }
+
+      const warningSuffix = linkWarnings.length > 0
+        ? ` Some links could not be directly verified (${linkWarnings.map((link: { source: string; reason?: string }) => `${link.source}${link.reason ? `: ${link.reason}` : ''}`).join(', ')}), but analysis continued.`
+        : '';
+      const postAnalysisSuffix = `${warningSuffix}${saveWarning}`;
 
       if (skills.length > 0 || aiTech.length > 0 || aiSoft.length > 0) {
-        setAnalysisMessage(`AI analysis complete with ${skills.length} raw skills and ${aiTech.length + aiSoft.length} AI skills from your links. Saved for this browser session.`);
+        setAnalysisMessage(`AI analysis complete with ${skills.length} raw skills and ${aiTech.length + aiSoft.length} AI skills from your links. Saved for this browser session.${postAnalysisSuffix}`);
       } else {
-        setAnalysisMessage('AI analysis completed, but no skills were detected from the provided links. Saved for this browser session.');
+        setAnalysisMessage(`AI analysis completed, but no skills were detected from the provided links. Saved for this browser session.${postAnalysisSuffix}`);
       }
     } catch (err: any) {
       // Handle link verification errors
@@ -596,10 +612,13 @@ export default function HomePage() {
             className="inline-flex shrink-0 items-center gap-3 rounded-2xl px-1 py-1 transition hover:bg-white/50"
             aria-label="Go to Next-Gen Skillforge overview"
           >
-            <img
+            <Image
               src="/next-gen-skillforge-logo.svg"
               alt="Next-Gen Skillforge logo"
               className="h-11 w-auto shrink-0"
+              width={164}
+              height={44}
+              priority
             />
             <span className="flex flex-col leading-tight">
               <span className="text-sm font-semibold text-slate-900 sm:text-base">Next-Gen Skillforge</span>

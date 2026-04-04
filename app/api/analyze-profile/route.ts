@@ -251,6 +251,18 @@ interface LinkVerificationResult {
   error?: string;
 }
 
+function resolveResponseUrl(response: any, originalUrl: string): string {
+  const fromNode = response?.request?.res?.responseUrl;
+  const fromBrowserLike = response?.request?.responseURL;
+  const candidate = typeof fromNode === 'string' && fromNode.trim()
+    ? fromNode
+    : typeof fromBrowserLike === 'string' && fromBrowserLike.trim()
+      ? fromBrowserLike
+      : originalUrl;
+
+  return normalizeUrl(candidate);
+}
+
 async function verifyLinks(links: SocialLinks): Promise<{
   verified: LinkVerificationResult[];
   accessibleCount: number;
@@ -264,24 +276,60 @@ async function verifyLinks(links: SocialLinks): Promise<{
 
   const verificationPromises = sourceNames.map(async ([source, url]) => {
     try {
-      const response = await axios.head(url, {
+      const headResponse = await axios.head(url, {
         headers: SCRAPER_HEADERS,
         timeout: 6000,
         validateStatus: () => true,
         maxRedirects: 5,
       });
 
-      const accessible = response.status >= 200 && response.status < 400;
+      if (headResponse.status >= 200 && headResponse.status < 400) {
+        return {
+          url: resolveResponseUrl(headResponse, url),
+          source,
+          accessible: true,
+          status: headResponse.status,
+        } as LinkVerificationResult;
+      }
+
+      // Some hosts reject HEAD while allowing GET for public pages.
+      if ([401, 403, 405, 406, 429, 999].includes(headResponse.status)) {
+        const getResponse = await axios.get(url, {
+          headers: SCRAPER_HEADERS,
+          timeout: 7000,
+          validateStatus: () => true,
+          maxRedirects: 5,
+          responseType: 'text',
+          maxContentLength: 256 * 1024,
+        });
+
+        const getAccessible = getResponse.status >= 200 && getResponse.status < 400;
+        if (getAccessible) {
+          return {
+            url: resolveResponseUrl(getResponse, url),
+            source,
+            accessible: true,
+            status: getResponse.status,
+          } as LinkVerificationResult;
+        }
+
+        return {
+          url: resolveResponseUrl(getResponse, url),
+          source,
+          accessible: false,
+          status: getResponse.status,
+          error: `HTTP ${getResponse.status}: ${getStatusDescription(getResponse.status)}`,
+        } as LinkVerificationResult;
+      }
+
       const result: LinkVerificationResult = {
-        url,
+        url: resolveResponseUrl(headResponse, url),
         source,
-        accessible,
-        status: response.status,
+        accessible: false,
+        status: headResponse.status,
       };
 
-      if (!accessible) {
-        result.error = `HTTP ${response.status}: ${getStatusDescription(response.status)}`;
-      }
+      result.error = `HTTP ${headResponse.status}: ${getStatusDescription(headResponse.status)}`;
 
       return result;
     } catch (error) {
@@ -317,6 +365,7 @@ function getStatusDescription(status: number): string {
     429: 'Too Many Requests (Rate Limited)',
     500: 'Server Error',
     503: 'Service Unavailable',
+    999: 'Blocked by anti-bot protection',
   };
 
   return descriptions[status] || 'Inaccessible';
@@ -383,7 +432,7 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string 
 
   return {
     html: typeof response.data === 'string' ? response.data : String(response.data ?? ''),
-    finalUrl: normalizeUrl(url),
+    finalUrl: resolveResponseUrl(response, url),
   };
 }
 
@@ -678,7 +727,7 @@ function createSkillLookup(values: string[]): Set<string> {
 }
 
 function getProfileSources(extractedSkills: Skill[]): string[] {
-  const preferredOrder = ['GitHub', 'LinkedIn', 'Portfolio', 'Resume URL', 'Resume', 'Dev.to', 'Twitter URL', 'Twitter'];
+  const preferredOrder = ['GitHub', 'LinkedIn', 'Portfolio', 'Resume Upload', 'Resume', 'Dev.to', 'Twitter'];
   const sources = new Set<string>();
 
   for (const skill of extractedSkills) {
@@ -1722,6 +1771,7 @@ export async function POST(request: NextRequest) {
     const uploadedResumeFileName = typeof body?.resumeFileName === 'string' ? body.resumeFileName.trim() : '';
     const hasResumeUpload = uploadedResumeText.length > 0;
     const hasAnyProfileLinks = buildUrlList(links).length > 0;
+    let linkWarnings: Array<{ source: keyof SocialLinks; url: string; reason?: string }> = [];
 
     if (!hasAnyProfileLinks && !hasResumeUpload) {
       return NextResponse.json({ error: 'Please provide at least one public profile link or upload a resume.' }, { status: 400 });
@@ -1731,21 +1781,13 @@ export async function POST(request: NextRequest) {
       // Verify link accessibility before scraping
       const linkVerification = await verifyLinks(links);
 
-      if (linkVerification.accessibleCount === 0 && !hasResumeUpload) {
-        return NextResponse.json(
-          {
-            error: 'None of the provided links are accessible.',
-            details: linkVerification.inaccessibleLinks.map((link) => ({
-              source: link.source,
-              url: link.url,
-              reason: link.error,
-            })),
-          },
-          { status: 400 },
-        );
-      }
+      linkWarnings = linkVerification.inaccessibleLinks.map((link) => ({
+        source: link.source,
+        url: link.url,
+        reason: link.error,
+      }));
 
-      if (linkVerification.inaccessibleLinks.length > 0) {
+      if (linkWarnings.length > 0) {
         console.warn('Some links are inaccessible:', linkVerification.inaccessibleLinks);
       }
     }
@@ -1848,6 +1890,7 @@ export async function POST(request: NextRequest) {
       aiTopSkills: processedAnalysis.topSkills,
       aiJobRecommendations,
       aiLearningPath,
+      linkWarnings,
     });
   } catch (error) {
     console.error('Error analyzing profile:', error);
