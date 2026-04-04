@@ -1,82 +1,93 @@
 # Next-Gen Skillforge
 
-> Technocrats Innovation Challenge - 2k26
->
+> Technocrats Innovation Challenge - 2k26  
 > Team Name: Next-Gen Builders
 
-Next-Gen Skillforge is an AI-assisted career profile analyzer built with Next.js. The app lets users submit professional links such as GitHub, LinkedIn, a resume, a portfolio, Twitter, and Dev.to, then scrapes the public pages, extracts skills, generates AI-powered summaries, recommends roles, and builds a learning path based on the detected profile.
+Next-Gen Skillforge is an AI-powered career intelligence dashboard built with Next.js. It analyzes public profile links and resume content, extracts skill signals, generates role-fit insights, and creates a personalized learning roadmap.
 
-## What It Does
+## Core Functionality
 
-- Scrapes public professional links and extracts skill signals from the content.
-- Uses an AI provider to generate technical and soft skill analysis.
-- Produces an AI summary with strengths, gaps, industry relevance, and top skills.
-- Generates job recommendations with fit reasons, salary ranges, and locations.
-- Builds a learning path with books, courses, videos, and documentation links.
-- Persists theme, profile links, and analysis state in a browser session.
-- Supports a manual profile snapshot endpoint that writes generated profile data to `lib/generatedUserProfile.ts` with a JSON fallback.
+- Link-based profile analysis (GitHub, LinkedIn, portfolio, resume URL, Twitter, Dev.to).
+- Resume upload and parsing (`.pdf`, `.docx`, `.txt`) with detected skill keywords.
+- AI-generated outputs:
+	- Technical and soft skill scoring.
+	- Summary, strengths, and growth gaps.
+	- Industry relevance score.
+	- ATS score with actionable feedback (when resume text is available).
+	- Job recommendations with match percentage and fit reason.
+	- Prioritized learning path with resource links.
+- Downloadable PDF report from analyzed profile data.
+- Session-backed persistence for preferences and last valid analysis.
+- Optional profile snapshot export to generated TypeScript/JSON files.
 
 ## Tech Stack
 
-- Next.js 14 App Router
-- React 18
-- TypeScript
+- Next.js 14 (App Router)
+- React 18 + TypeScript
 - Tailwind CSS
 - Framer Motion
 - Recharts
 - iron-session
-- Axios
-- Cheerio
+- Axios + Cheerio
+- pdf-parse + mammoth
 
-## Project Structure
+## Architecture Overview
 
-- `app/page.tsx` - Main dashboard UI and profile analysis flow.
-- `app/layout.tsx` - Root layout, metadata, fonts, and theme bootstrapping.
-- `app/api/analyze-profile/route.ts` - Scrapes links, calls the AI analysis pipeline, and returns profile insights.
-- `app/api/session/preferences/route.ts` - Saves and loads theme, link, and UI preferences.
-- `app/api/session/analysis/route.ts` - Stores the latest analysis in the session.
-- `app/api/profile/snapshot/route.ts` - Writes a generated profile snapshot to `lib/generatedUserProfile.ts` or `lib/generatedUserProfile.json`.
-- `lib/ai.ts` - AI provider selection and profile analysis helpers.
-- `lib/session.ts` - Session configuration and persistence helpers.
-- `lib/types.ts` - Shared profile, recommendation, and learning path types.
-- `lib/profileDefaults.ts` - Default empty profile state used by the dashboard.
-- `lib/utils.ts` - Shared utility helpers.
+- `app/page.tsx`: Interactive dashboard UI, link input, resume import, analysis trigger, and results panels.
+- `app/api/analyze-profile/route.ts`: URL validation, scraping, skill extraction, AI orchestration, and response shaping.
+- `app/api/resume/import/route.ts`: Resume file parsing and keyword detection.
+- `app/api/report/download/route.ts`: Generates a PDF report from validated profile payload.
+- `app/api/session/preferences/route.ts`: Stores theme, links, and UI preference state.
+- `app/api/session/analysis/route.ts`: Stores/retrieves/clears current analysis in session.
+- `app/api/profile/snapshot/route.ts`: Writes `lib/generatedUserProfile.ts` with JSON fallback.
+- `lib/ai.ts`: Multi-provider AI adapter and normalized profile analysis parsing.
+- `lib/session.ts`: Session secret handling and cookie configuration.
 
-## User Flow
+## UX Flow
 
-1. Enter one or more professional links.
-2. Click Analyze Profile.
-3. The app verifies the links, scrapes public content, and extracts skill signals.
-4. The AI layer converts the text into technical skills, soft skills, summary insights, recommendations, and a learning path.
-5. Results are saved in the browser session so the dashboard can restore the latest profile on reload.
-
-## API Routes
-
-- `POST /api/analyze-profile` - Accepts social/profile links and returns extracted skills plus AI-generated profile insights.
-- `GET /api/session/preferences` - Reads saved theme, link, and UI preferences.
-- `POST /api/session/preferences` - Saves theme, link, and UI preferences.
-- `GET /api/session/analysis` - Returns the latest saved analysis if it matches the current link set.
-- `POST /api/session/analysis` - Saves the current analysis payload to the session.
-- `DELETE /api/session/analysis` - Clears the saved analysis from the session.
-- `POST /api/profile/snapshot` - Writes a serialized profile snapshot to `lib/generatedUserProfile.ts`, with `lib/generatedUserProfile.json` as fallback.
+1. Add professional links and/or import a resume file.
+2. Run profile analysis.
+3. Review skill graphs, recommendations, ATS feedback, and learning path.
+4. Download the generated PDF report.
+5. Return later with session-restored preferences and analysis (when link signature matches).
 
 ## Notes
 
-- The app stores session data in an encrypted cookie via `iron-session`.
-- The dashboard is designed for public links; private or inaccessible pages may be rejected during verification.
-- The generated snapshot files are derived artifacts and can be regenerated at any time.
+- URL handling includes SSRF-focused safeguards (no localhost/private network targets).
+- Session data is cookie-backed and encrypted via `iron-session`.
+- Resume ATS scoring is most useful after successful resume import.
+- Snapshot files are generated artifacts and can be regenerated anytime.
 
-## Future Enhancements
+## Future Enhancements (Startup Roadmap)
 
-These are strong next steps that can make the product feel more startup-ready and commercially valuable:
+These enhancements can help evolve Next-Gen Skillforge from a prototype into a startup-ready product:
 
-- User accounts and persistent profiles so users can track their growth over time.
-- Recruiter and hiring-manager views for evaluating candidates from a single dashboard.
-- Skill-gap roadmap with weekly milestones, progress tracking, and reminders.
-- Integration with GitHub, LinkedIn, Notion, and Google Drive for deeper profile signals.
-- Personalized job feed with saved roles, alerts, and match history.
-- Team analytics for bootcamps, colleges, or internal talent programs.
-- Multi-provider AI orchestration with fallback routing, cost controls, and response caching.
-- Privacy and compliance controls such as consent management, data retention settings, and deletion requests.
+- User accounts and persistent profile history
+	- Allow users to track progress over weeks/months and compare score deltas over time.
 
-If expanded strategically, these features could evolve Next-Gen Skillforge from a profile analyzer into a career intelligence platform.
+- Recruiter and hiring manager mode
+	- Add candidate comparison views, shortlist pipelines, and shareable evaluation reports.
+
+- Subscription tiers (B2C + B2B)
+	- Free tier for basic analysis, Pro for deeper insights/reports, and Team plans for bootcamps or hiring teams.
+
+- Job board and ATS integrations
+	- Connect with LinkedIn Jobs, Greenhouse, Lever, and Workday to deliver role-specific match insights.
+
+- Interview preparation assistant
+	- Generate mock interview questions from detected skill gaps and provide feedback loops.
+
+- Learning path execution tracking
+	- Add milestone checklists, reminders, and completion analytics to increase retention and outcomes.
+
+- AI cost and reliability layer
+	- Add provider fallback, response caching, retries, and per-feature token budgets for predictable margins.
+
+- Privacy and compliance foundation
+	- Introduce consent controls, data retention policies, delete-my-data flows, and audit logs.
+
+- White-label offering for institutions
+	- Offer branded portals for colleges, bootcamps, and workforce programs with cohort analytics.
+
+- Outcome analytics dashboard
+	- Track conversion metrics like interview callbacks, resume score improvement, and placement success.
