@@ -20,6 +20,25 @@ function sanitizeExpandedJobs(input: unknown): boolean | undefined {
   return undefined;
 }
 
+function sanitizeLinkValue(input: string): string | undefined {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return undefined;
+    }
+
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 function sanitizeLinks(input: unknown): Partial<SocialLinks> {
   if (!input || typeof input !== 'object') {
     return {};
@@ -30,7 +49,10 @@ function sanitizeLinks(input: unknown): Partial<SocialLinks> {
   for (const key of LINK_KEYS) {
     const value = (input as Record<string, unknown>)[key];
     if (typeof value === 'string') {
-      normalizedLinks[key] = value;
+      const sanitized = sanitizeLinkValue(value);
+      if (sanitized) {
+        normalizedLinks[key] = sanitized;
+      }
     }
   }
 

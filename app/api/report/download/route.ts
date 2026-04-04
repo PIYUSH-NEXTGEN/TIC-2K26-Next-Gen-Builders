@@ -14,6 +14,85 @@ interface StyledLine {
   style: LineStyle;
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isString);
+}
+
+function isUserProfile(value: unknown): value is UserProfile {
+  if (!isObject(value)) return false;
+
+  const links = value.links;
+  const aiSummary = value.aiSummary;
+
+  if (!isObject(links) || !isObject(aiSummary)) return false;
+
+  const hasValidLinks = isString(links.github)
+    && isString(links.linkedin)
+    && isString(links.resume)
+    && isString(links.twitter)
+    && isString(links.portfolio)
+    && isString(links.devto);
+
+  const hasValidSkills = (skills: unknown) => Array.isArray(skills)
+    && skills.every((item) => isObject(item)
+      && isString(item.skill)
+      && typeof item.value === 'number'
+      && typeof item.fullMark === 'number');
+
+  const hasValidJobs = Array.isArray(value.jobRecommendations)
+    && value.jobRecommendations.every((job) => isObject(job)
+      && typeof job.id === 'number'
+      && isString(job.title)
+      && isString(job.company)
+      && typeof job.matchPercentage === 'number'
+      && isString(job.salary)
+      && isString(job.location)
+      && isString(job.type)
+      && isStringArray(job.skills)
+      && isString(job.description)
+      && isString(job.applyUrl)
+      && (typeof job.fitReason === 'undefined' || isString(job.fitReason)));
+
+  const hasValidSummary = isString(aiSummary.overview)
+    && isStringArray(aiSummary.strengths)
+    && isStringArray(aiSummary.gaps)
+    && typeof aiSummary.industryRelevanceScore === 'number'
+    && typeof aiSummary.atsScore === 'number'
+    && isStringArray(aiSummary.atsFeedback)
+    && isString(aiSummary.industryInsights)
+    && isStringArray(aiSummary.topSkills);
+
+  const hasValidLearningPath = Array.isArray(value.learningPath)
+    && value.learningPath.every((item) => isObject(item)
+      && typeof item.id === 'number'
+      && isString(item.topic)
+      && (item.priority === 'high' || item.priority === 'medium' || item.priority === 'low')
+      && isString(item.timeEstimate)
+      && isString(item.explanation)
+      && Array.isArray(item.resources)
+      && item.resources.every((resource) => isObject(resource)
+        && (resource.type === 'course' || resource.type === 'book' || resource.type === 'video' || resource.type === 'documentation')
+        && isString(resource.title)
+        && (typeof resource.provider === 'undefined' || isString(resource.provider))
+        && isString(resource.url)
+        && typeof resource.free === 'boolean'));
+
+  return hasValidLinks
+    && hasValidSkills(value.technicalSkills)
+    && hasValidSkills(value.softSkills)
+    && hasValidJobs
+    && hasValidSummary
+    && hasValidLearningPath;
+}
+
 function toSafeText(value: string | undefined | null): string {
   if (!value) return 'N/A';
   return value.replace(/\s+/g, ' ').trim() || 'N/A';
@@ -225,7 +304,7 @@ function buildReportPdf(profile: UserProfile): Buffer {
 
     pageLines.forEach((line) => {
       const rendered = resolveFont(line.style);
-      const text = line.style === 'bullet' && line.text.trim() ? `• ${line.text.trim()}` : line.text;
+      const text = line.style === 'bullet' && line.text.trim() ? `- ${line.text.trim()}` : line.text;
       textCommands.push(rendered.color);
       textCommands.push(rendered.fontRef);
       textCommands.push(`1 0 0 1 ${rendered.x} ${Math.round(currentYPosition)} Tm`);
@@ -280,10 +359,10 @@ function buildReportPdf(profile: UserProfile): Buffer {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as DownloadReportBody;
-    const profile = body?.profile;
+    const profile = isUserProfile(body?.profile) ? body.profile : null;
 
     if (!profile) {
-      return NextResponse.json({ error: 'Missing analysis report payload.' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid or missing analysis report payload.' }, { status: 400 });
     }
 
     const pdfBuffer = buildReportPdf(profile);

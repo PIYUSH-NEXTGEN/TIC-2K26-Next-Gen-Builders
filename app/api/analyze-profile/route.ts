@@ -1,5 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeProfileText } from '@/lib/ai';
 import type { JobRecommendation, LearningPathItem, LearningResource } from '@/lib/types';
@@ -235,6 +237,102 @@ function normalizeUrl(value: string): string {
   } catch {
     return value.trim();
   }
+}
+
+function isPrivateIpv4(ip: string): boolean {
+  const segments = ip.split('.').map((part) => Number(part));
+  if (segments.length !== 4 || segments.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return true;
+  }
+
+  if (segments[0] === 10) return true;
+  if (segments[0] === 127) return true;
+  if (segments[0] === 0) return true;
+  if (segments[0] === 169 && segments[1] === 254) return true;
+  if (segments[0] === 172 && segments[1] >= 16 && segments[1] <= 31) return true;
+  if (segments[0] === 192 && segments[1] === 168) return true;
+
+  return false;
+}
+
+function isPrivateIpv6(ip: string): boolean {
+  const lowered = ip.toLowerCase();
+
+  return lowered === '::1'
+    || lowered === '::'
+    || lowered.startsWith('fc')
+    || lowered.startsWith('fd')
+    || lowered.startsWith('fe80');
+}
+
+function isPrivateIpAddress(ip: string): boolean {
+  const ipVersion = net.isIP(ip);
+  if (ipVersion === 4) return isPrivateIpv4(ip);
+  if (ipVersion === 6) return isPrivateIpv6(ip);
+  return false;
+}
+
+async function resolvesToPublicIp(hostname: string): Promise<boolean> {
+  try {
+    const records = await dns.lookup(hostname, { all: true, verbatim: true });
+    if (!records.length) return false;
+    return records.every((record) => net.isIP(record.address) !== 0 && !isPrivateIpAddress(record.address));
+  } catch {
+    return false;
+  }
+}
+
+type LinkValidationWarning = { source: keyof SocialLinks; url: string; reason: string };
+
+async function sanitizeAndValidateLinks(inputLinks: SocialLinks): Promise<{
+  links: SocialLinks;
+  warnings: LinkValidationWarning[];
+}> {
+  const normalizedLinks: SocialLinks = {};
+  const warnings: LinkValidationWarning[] = [];
+
+  const linkEntries = Object.entries(inputLinks) as Array<[keyof SocialLinks, string | undefined]>;
+
+  for (const [source, value] of linkEntries) {
+    if (typeof value !== 'string' || !value.trim()) {
+      continue;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(value.trim());
+    } catch {
+      warnings.push({ source, url: value.trim(), reason: 'Invalid URL format.' });
+      continue;
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      warnings.push({ source, url: parsed.toString(), reason: 'Only http/https links are allowed.' });
+      continue;
+    }
+
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === 'localhost') {
+      warnings.push({ source, url: parsed.toString(), reason: 'Localhost URLs are not allowed.' });
+      continue;
+    }
+
+    if (isPrivateIpAddress(hostname)) {
+      warnings.push({ source, url: parsed.toString(), reason: 'Private or loopback IP addresses are not allowed.' });
+      continue;
+    }
+
+    const isPublicHost = await resolvesToPublicIp(hostname);
+    if (!isPublicHost) {
+      warnings.push({ source, url: parsed.toString(), reason: 'Host did not resolve to a public IP address.' });
+      continue;
+    }
+
+    parsed.hash = '';
+    normalizedLinks[source] = parsed.toString();
+  }
+
+  return { links: normalizedLinks, warnings };
 }
 
 function buildUrlList(links: SocialLinks): string[] {
@@ -804,8 +902,23 @@ function buildPersonalizedGaps(
 ): string[] {
   const sourcePhrase = sources.length > 0 ? formatList(sources) : 'your linked profiles';
   const skillNames = createSkillLookup([...technicalSkills.map((skill) => skill.name), ...softSkills.map((skill) => skill.name)]);
+  const topSkillsPhrase = analysis.topSkills.length > 0 ? formatList(analysis.topSkills.slice(0, 3)) : 'your strongest skills';
+  const weakestTechnical = [...technicalSkills]
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 2)
+    .map((skill) => skill.name);
+  const weakestSoft = [...softSkills]
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 2)
+    .map((skill) => skill.name);
+  const weakestTechnicalPhrase = weakestTechnical.length > 0 ? formatList(weakestTechnical) : 'backend and testing depth';
+  const weakestSoftPhrase = weakestSoft.length > 0 ? formatList(weakestSoft) : 'communication and stakeholder clarity';
 
-  const gaps: string[] = [];
+  const aiGaps = Array.isArray(analysis.gaps)
+    ? analysis.gaps.map((gap) => gap.trim()).filter(Boolean).slice(0, 3)
+    : [];
+
+  const gaps: string[] = [...aiGaps];
 
   if (focusArea === 'frontend') {
     if (!skillNames.has('node.js') && !skillNames.has('node') && !skillNames.has('backend')) {
@@ -848,7 +961,47 @@ function buildPersonalizedGaps(
     gaps.push('A few more project examples with measurable impact would make the profile easier to position for higher-fit roles.');
   }
 
-  return gaps.slice(0, 4);
+  const dynamicGaps = [
+    `Add quantified outcomes around ${topSkillsPhrase} so recruiters can see measurable impact, not only tool usage.`,
+    `Improve weaker signals in ${weakestTechnicalPhrase} with one focused project that includes architecture, tests, and deployment notes.`,
+    `Strengthen non-technical positioning in ${weakestSoftPhrase} with clearer project narratives, ownership statements, and collaboration examples.`,
+    focusArea === 'frontend'
+      ? 'Add one API or data-intensive project to balance strong UI skills with backend execution evidence.'
+      : focusArea === 'platform'
+        ? 'Add one customer-facing product project so infrastructure strengths connect more clearly to product outcomes.'
+        : 'Publish one end-to-end case study that links discovery, implementation, testing, and production impact.',
+    `Increase proof depth across ${sourcePhrase} with public artifacts like polished READMEs, demos, and technical write-ups.`,
+  ];
+
+  if (technicalSkills.length > 0) {
+    const lowTechnical = technicalSkills.filter((skill) => skill.score < 62).slice(0, 2).map((skill) => skill.name);
+    if (lowTechnical.length > 0) {
+      dynamicGaps.unshift(
+        `Your lowest technical signals are ${formatList(lowTechnical)}; improving these will quickly raise role match quality.`,
+      );
+    }
+  }
+
+  if (softSkills.length > 0) {
+    const lowSoft = softSkills.filter((skill) => skill.score < 62).slice(0, 2).map((skill) => skill.name);
+    if (lowSoft.length > 0) {
+      dynamicGaps.push(
+        `Soft-skill evidence is weakest in ${formatList(lowSoft)}; add clearer collaboration outcomes in project documentation.`,
+      );
+    }
+  }
+
+  const normalized = new Set(gaps.map((item) => normalizeToken(item)));
+  for (const item of dynamicGaps) {
+    const key = normalizeToken(item);
+    if (!normalized.has(key)) {
+      gaps.push(item);
+      normalized.add(key);
+    }
+    if (gaps.length >= 5) break;
+  }
+
+  return gaps.slice(0, 5);
 }
 
 function buildPersonalizedStrengths(
@@ -858,6 +1011,13 @@ function buildPersonalizedStrengths(
 ): string[] {
   const sourcePhrase = sources.length > 0 ? formatList(sources) : 'your linked profiles';
   const strengths = new Set<string>();
+  const topSkillsPhrase = analysis.topSkills.length > 0 ? formatList(analysis.topSkills.slice(0, 3)) : 'your core stack';
+  const avgTechnicalScore = analysis.technicalSkills.length > 0
+    ? Math.round(analysis.technicalSkills.reduce((sum, skill) => sum + skill.score, 0) / analysis.technicalSkills.length)
+    : 0;
+  const avgSoftScore = analysis.softSkills.length > 0
+    ? Math.round(analysis.softSkills.reduce((sum, skill) => sum + skill.score, 0) / analysis.softSkills.length)
+    : 0;
 
   const topTech = analysis.technicalSkills.slice(0, 3);
   const topSoft = analysis.softSkills.slice(0, 2);
@@ -880,7 +1040,28 @@ function buildPersonalizedStrengths(
     strengths.add('Your profile shows a mix of technical depth and communication that can be positioned toward multiple role types.');
   }
 
-  return Array.from(strengths).slice(0, 5);
+  const baseStrengths = Array.from(strengths);
+  const fallbackStrengths = [
+    `Your profile evidence across ${sourcePhrase} consistently reinforces strengths in ${topSkillsPhrase}.`,
+    `Technical signal is currently around ${avgTechnicalScore}%, giving you a practical base for role-focused upskilling.`,
+    `Collaboration signal is around ${avgSoftScore}%, which supports cross-functional fit and team readiness.`,
+    analysis.topSkills.length >= 4
+      ? `Breadth across ${analysis.topSkills.slice(0, 4).join(', ')} improves flexibility for varied role requirements.`
+      : 'Your visible skill mix is coherent and can be positioned effectively for internship and early-career roles.',
+    'The profile shows clear learning momentum, with reusable project skills that map to current market demand.',
+  ];
+
+  const normalized = new Set(baseStrengths.map((item) => normalizeToken(item)));
+  for (const fallback of fallbackStrengths) {
+    const key = normalizeToken(fallback);
+    if (!normalized.has(key)) {
+      baseStrengths.push(fallback);
+      normalized.add(key);
+    }
+    if (baseStrengths.length >= 5) break;
+  }
+
+  return baseStrengths.slice(0, 5);
 }
 
 function aggregateSkillsByName(skills: Skill[]): Skill[] {
@@ -1168,6 +1349,12 @@ function enrichAnalysis(analysis: AnalysisResult, extractedSkills: Skill[]): Ana
 }
 
 function buildAIStrengths(analysis: Awaited<ReturnType<typeof analyzeProfileText>>): string[] {
+  const topSkillsPhrase = analysis.topSkills.length > 0 ? formatList(analysis.topSkills.slice(0, 3)) : 'your strongest areas';
+  const topTechnical = analysis.technicalSkills.slice(0, 2).map((skill) => skill.name);
+  const topSoft = analysis.softSkills.slice(0, 2).map((skill) => skill.name);
+  const technicalPhrase = topTechnical.length > 0 ? formatList(topTechnical) : 'technical execution';
+  const softPhrase = topSoft.length > 0 ? formatList(topSoft) : 'collaboration and communication';
+
   const fromAnalysis = Array.isArray(analysis.strengths)
     ? analysis.strengths.map((item) => item.trim()).filter(Boolean)
     : [];
@@ -1181,12 +1368,31 @@ function buildAIStrengths(analysis: Awaited<ReturnType<typeof analyzeProfileText
       return true;
     });
 
+    const fallback = [
+      `Consistent technical foundation is visible in ${technicalPhrase}.`,
+      `Collaboration strength is reinforced by signals in ${softPhrase}.`,
+      `Your strongest evidence currently centers on ${topSkillsPhrase}.`,
+      'Public profile artifacts indicate delivery focus and strong learning adaptability.',
+      'Balanced implementation and communication signals improve cross-functional team fit.',
+    ];
+
+    for (const line of fallback) {
+      const normalized = normalizeToken(line);
+      if (!normalizedSeen.has(normalized)) {
+        unique.push(line);
+        normalizedSeen.add(normalized);
+      }
+      if (unique.length >= 5) break;
+    }
+
     return unique.slice(0, 5);
   }
 
   const fallback = new Set<string>();
   analysis.technicalSkills.slice(0, 3).forEach((skill) => fallback.add(`Technical depth shown in ${skill.name}.`));
   analysis.softSkills.slice(0, 2).forEach((skill) => fallback.add(`Collaboration signal present in ${skill.name}.`));
+  fallback.add(`The strongest profile evidence currently centers on ${topSkillsPhrase}.`);
+  fallback.add(`Combined strengths in ${technicalPhrase} and ${softPhrase} improve role readiness.`);
 
   return Array.from(fallback).slice(0, 5);
 }
@@ -1766,28 +1972,37 @@ function buildAILearningPath(
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as AnalyzeProfileRequestBody;
-    const links = body?.links ?? {};
+    const submittedLinks = body?.links ?? {};
     const uploadedResumeText = typeof body?.resumeText === 'string' ? body.resumeText.trim() : '';
     const uploadedResumeFileName = typeof body?.resumeFileName === 'string' ? body.resumeFileName.trim() : '';
     const hasResumeUpload = uploadedResumeText.length > 0;
+    const validatedLinksResult = await sanitizeAndValidateLinks(submittedLinks);
+    const links = validatedLinksResult.links;
     const hasAnyProfileLinks = buildUrlList(links).length > 0;
-    let linkWarnings: Array<{ source: keyof SocialLinks; url: string; reason?: string }> = [];
+    let linkWarnings: Array<{ source: keyof SocialLinks; url: string; reason?: string }> = [...validatedLinksResult.warnings];
 
     if (!hasAnyProfileLinks && !hasResumeUpload) {
-      return NextResponse.json({ error: 'Please provide at least one public profile link or upload a resume.' }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: 'Please provide at least one valid public profile link or upload a resume.',
+          details: validatedLinksResult.warnings,
+        },
+        { status: 400 },
+      );
     }
 
     if (hasAnyProfileLinks) {
       // Verify link accessibility before scraping
       const linkVerification = await verifyLinks(links);
 
-      linkWarnings = linkVerification.inaccessibleLinks.map((link) => ({
+      const accessibilityWarnings = linkVerification.inaccessibleLinks.map((link) => ({
         source: link.source,
         url: link.url,
         reason: link.error,
       }));
+      linkWarnings = [...linkWarnings, ...accessibilityWarnings];
 
-      if (linkWarnings.length > 0) {
+      if (accessibilityWarnings.length > 0) {
         console.warn('Some links are inaccessible:', linkVerification.inaccessibleLinks);
       }
     }
@@ -1884,8 +2099,9 @@ export async function POST(request: NextRequest) {
       aiTechnicalSkills: processedAnalysis.technicalSkills,
       aiSoftSkills: processedAnalysis.softSkills,
       aiIndustryRelevanceScore: processedAnalysis.industryRelevanceScore,
-      aiAtsScore: processedAnalysis.atsScore,
-      aiAtsFeedback: processedAnalysis.atsFeedback,
+      aiAtsScore: hasResumeUpload ? processedAnalysis.atsScore : null,
+      aiAtsFeedback: hasResumeUpload ? processedAnalysis.atsFeedback : [],
+      aiAtsAvailable: hasResumeUpload,
       aiIndustryInsights: processedAnalysis.industryInsights,
       aiTopSkills: processedAnalysis.topSkills,
       aiJobRecommendations,

@@ -103,6 +103,7 @@ export default function HomePage() {
   const [industryRelevanceScore, setIndustryRelevanceScore] = useState(initialProfile.aiSummary.industryRelevanceScore);
   const [atsScore, setAtsScore] = useState(initialProfile.aiSummary.atsScore);
   const [atsFeedback, setAtsFeedback] = useState(initialProfile.aiSummary.atsFeedback);
+  const [atsAvailable, setAtsAvailable] = useState(false);
   const [industryInsights, setIndustryInsights] = useState(initialProfile.aiSummary.industryInsights);
   const [topSkills, setTopSkills] = useState(initialProfile.aiSummary.topSkills);
 
@@ -167,6 +168,7 @@ export default function HomePage() {
     setIndustryRelevanceScore(initialProfile.aiSummary.industryRelevanceScore);
     setAtsScore(initialProfile.aiSummary.atsScore);
     setAtsFeedback(initialProfile.aiSummary.atsFeedback);
+    setAtsAvailable(false);
     setIndustryInsights(initialProfile.aiSummary.industryInsights);
     setTopSkills(initialProfile.aiSummary.topSkills);
     setHasCompletedAnalysis(false);
@@ -317,6 +319,7 @@ export default function HomePage() {
       setIndustryRelevanceScore(response.data.aiIndustryRelevanceScore ?? 0);
       setAtsScore(response.data.aiAtsScore ?? 0);
       setAtsFeedback(response.data.aiAtsFeedback || []);
+      setAtsAvailable(Boolean(response.data.aiAtsAvailable));
       setIndustryInsights(response.data.aiIndustryInsights || '');
       setTopSkills(response.data.aiTopSkills || []);
       setJobs(response.data.aiJobRecommendations || []);
@@ -447,6 +450,7 @@ export default function HomePage() {
               setIndustryRelevanceScore(savedProfile.aiSummary.industryRelevanceScore);
               setAtsScore(savedProfile.aiSummary.atsScore ?? 0);
               setAtsFeedback(savedProfile.aiSummary.atsFeedback ?? []);
+              setAtsAvailable(Boolean((savedProfile.aiSummary.atsScore ?? 0) > 0 && (savedProfile.aiSummary.atsFeedback ?? []).length > 0));
               setIndustryInsights(savedProfile.aiSummary.industryInsights);
               setTopSkills(savedProfile.aiSummary.topSkills);
               setJobs(savedProfile.jobRecommendations);
@@ -790,11 +794,11 @@ export default function HomePage() {
 
         {/* Display Extracted Skills */}
         {extractedSkills.length > 0 && (
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+          <div className="mt-6 rounded-lg bg-slate-50 p-4">
             <h3 className="text-lg font-semibold mb-3 text-slate-900">AI-Extracted Skills</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {extractedSkills.map((skill, index) => (
-                <div key={index} className="p-3 bg-white border border-gray-200 rounded-lg">
+                <div key={index} className="rounded-lg border border-slate-200 bg-white p-3">
                   <p className="font-medium text-slate-900">{skill.name}</p>
                   <p className="text-sm text-slate-600">Confidence: {(skill.confidence * 100).toFixed(0)}%</p>
                   <p className="text-xs text-slate-500">From: {skill.source}</p>
@@ -946,25 +950,34 @@ export default function HomePage() {
               />
             </div>
           </div>
-            <div className="mt-4 rounded-2xl border border-sky-200 bg-white p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Resume ATS Score</p>
-              <p className="mt-1 text-3xl font-bold text-sky-800">{atsScore}%</p>
-              <div className="mt-2 h-3 overflow-hidden rounded-full bg-sky-100">
-                <div
-                  className="h-full rounded-full bg-sky-600"
-                  style={{ width: `${atsScore}%` }}
-                />
+            {atsAvailable ? (
+              <div className="mt-4 rounded-2xl border border-sky-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Resume ATS Score</p>
+                <p className="mt-1 text-3xl font-bold text-sky-800">{atsScore}%</p>
+                <div className="mt-2 h-3 overflow-hidden rounded-full bg-sky-100">
+                  <div
+                    className="h-full rounded-full bg-sky-600"
+                    style={{ width: `${atsScore}%` }}
+                  />
+                </div>
+                {atsFeedback.length > 0 && (
+                  <ul className="mt-3 space-y-1.5 text-xs text-slate-700">
+                    {atsFeedback.slice(0, 3).map((item) => (
+                      <li key={item} className="rounded-lg bg-sky-50 px-2.5 py-1.5">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              {atsFeedback.length > 0 && (
-                <ul className="mt-3 space-y-1.5 text-xs text-slate-700">
-                  {atsFeedback.slice(0, 3).map((item) => (
-                    <li key={item} className="rounded-lg bg-sky-50 px-2.5 py-1.5">
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-sky-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Resume ATS Score</p>
+                <p className="mt-1 text-sm text-slate-700">
+                  Upload a resume and run Analyze Profile to generate ATS scoring and feedback.
+                </p>
+              </div>
+            )}
           <p className="mt-4 text-sm leading-6 text-slate-700">{industryInsights}</p>
           <div className="mt-4 flex flex-wrap gap-2">
             {topSkills.map((skill) => (

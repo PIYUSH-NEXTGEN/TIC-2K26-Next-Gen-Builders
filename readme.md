@@ -36,7 +36,6 @@ Next-Gen Skillforge is an AI-assisted career profile analyzer built with Next.js
 - `app/api/session/preferences/route.ts` - Saves and loads theme, link, and UI preferences.
 - `app/api/session/analysis/route.ts` - Stores the latest analysis in the session.
 - `app/api/profile/snapshot/route.ts` - Writes a generated profile snapshot to `lib/generatedUserProfile.ts` or `lib/generatedUserProfile.json`.
-- `app/components/ProfessionalLinkInputs.tsx` - Early standalone link input component kept in the repo.
 - `lib/ai.ts` - AI provider selection and profile analysis helpers.
 - `lib/session.ts` - Session configuration and persistence helpers.
 - `lib/types.ts` - Shared profile, recommendation, and learning path types.
